@@ -1,0 +1,60 @@
+services:
+  db:
+    image: mariadb:11
+    restart: unless-stopped
+    environment:
+      MARIADB_ALLOW_EMPTY_ROOT_PASSWORD: "yes"
+      MARIADB_DATABASE: openpagingserver
+    ports:
+      - "127.0.0.1:3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mariadb-admin ping -h localhost -u root || mysqladmin ping -h localhost -u root"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 60s
+
+  ops:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        OPS_REF: ${OPS_REF:-main}
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - DEBUG=${DEBUG:-false}
+      - DEMO_MODE=${DEMO_MODE:-false}
+      - WEB_REVERSE_PROXY_ALLOWED=${WEB_REVERSE_PROXY_ALLOWED:-}
+      - API_REVERSE_PROXY_ALLOWED=${API_REVERSE_PROXY_ALLOWED:-}
+    volumes:
+      - ops_env:/opt/ops-env:ro
+      - assets:/var/lib/openpagingserver/assets
+      - endpoint_modules:/var/lib/openpagingserver/endpointmodules
+      - trusted_ca:/etc/openpagingserver/trustedca
+
+  db-init:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        OPS_REF: ${OPS_REF:-main}
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: db
+    volumes:
+      - ops_env:/opt/ops-env
+    entrypoint: ["python", "/opt/docker-init-db.py"]
+    profiles:
+      - init
+
+volumes:
+  db_data:
+  ops_env:
+  assets:
+  endpoint_modules:
+  trusted_ca:
